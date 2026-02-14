@@ -134,11 +134,14 @@ begin
 	Result := cssText;
 end;
 
-function MakeHTML(const css, content: String): String;
+function MakeHTML(const css, content: String; const baseUrl: String = ''): String;
 begin
 	Result := '<!DOCTYPE html><html>'#13'<head>'#13 +
 		 '<meta charset="UTF-8"; http-equiv="X-UA-Compatible" content="IE=EmulateIE11">'#13 +
 		 '<meta name="viewport" content="width=device-width, initial-scale=1.0">'#13;
+	// Inject <base> tag so the browser resolves relative paths (images, etc.)
+	if not baseUrl.IsEmpty then
+		Result := Result + '<base href="' + baseUrl + '">' + #13;
 	Result := Result + '<style>' + css + '</style>' + #13 + '</head>' + #13 + '<body>'#13 + content + #13'</body></html>';
 end;
 
@@ -147,7 +150,7 @@ begin
 	Result := MakeHTML(LoadCSS(), '<div class="highlight_ai"></div>');
 end;
 
-function MarkDownToHtml(const Input: string): String;
+function MarkDownToHtml(const Input: string; const baseUrl: String = ''): String;
 var
 	md: TMarkdownProcessor;
 	uri, html: String;
@@ -165,7 +168,7 @@ begin
 		html := THTMLEncoding.html.Decode(html);
 		uri := 'file:///' + StringReplace(ExtractFilePath(ParamStr(0)), TPath.DirectorySeparatorChar, '/', [rfReplaceAll]);
 		html := StringReplace(html, '%uri%', uri, [rfReplaceAll]);
-		Result := MakeHTML(LoadCSS(), html);
+		Result := MakeHTML(LoadCSS(), html, baseUrl);
 	finally
 		md.Free;
 	end;
@@ -205,6 +208,11 @@ begin
 		self.Caption := PROGRAM_NAME + ' - ' + OpenDialog1.Filename + '*';
 		FKeyPressed := true;
 	end;
+
+	// Restart the timer on every keypress so RefreshPreview
+	// only triggers after the full idle interval (debounce)
+	Timer1.Enabled := False;
+	Timer1.Enabled := True;
 end;
 
 procedure TfrmMarkdown.SaveWindowState;
@@ -268,11 +276,20 @@ end;
 
 procedure TfrmMarkdown.RefreshPreview;
 var
-	html: string;
+	html, baseUrl: string;
 begin
-	html := MarkDownToHtml(mmEditor.Lines.Text);
+	// Build file:/// base URL from the markdown file's directory
+	baseUrl := ExtractFilePath(OpenDialog1.Filename);
+	if not baseUrl.IsEmpty then
+		baseUrl := 'file:///' + StringReplace(baseUrl, '\', '/', [rfReplaceAll]);
+
+	html := MarkDownToHtml(mmEditor.Lines.Text, baseUrl);
 	if not html.IsEmpty then
+	begin
 		WebBrowser1.LoadFromStrings(html, TEncoding.UTF8, '');
+		TFile.WriteAllText('c:\temp\test.html', html, TEncoding.UTF8);
+	end;
+	mmEditor.SetFocus;
 end;
 
 procedure TfrmMarkdown.ApplyMarkdownHeading(const HeadingLevel: Integer);

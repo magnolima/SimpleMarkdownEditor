@@ -1,10 +1,12 @@
-# Simple Markdown Editor
+﻿# Simple Markdown Editor
 
 A simple Markdown editor and live previewer built with Delphi FMX.
 
 The app uses the [`delphi-markdown`](https://github.com/grahamegrieve/delphi-markdown) library to convert Markdown to HTML, then renders it in an FMX `TWebBrowser`.
 
 ## Features
+
+![Simple Mark Down](screenshot.jpg) 
 
 - Edit Markdown text with live HTML preview.
 - Open and save `.md` files.
@@ -67,4 +69,3 @@ The application injects runtime values (such as background color and body font s
 - `SimpleMarkdownEditor.gui.pas`: main form logic, Markdown processing, preview refresh.
 - `SimpleMarkdownEditor.gui.fmx`: form/UI layout.
 - `SimpleMarkdownEditor.css`: HTML preview theme.
-
