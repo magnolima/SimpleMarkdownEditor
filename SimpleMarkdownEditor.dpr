@@ -7,6 +7,8 @@ uses
 
 {$R *.res}
 
+var
+  FileName: string;
 begin
   Application.Initialize;
   Application.CreateForm(TfrmMarkdown, frmMarkdown);

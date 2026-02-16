@@ -24,10 +24,12 @@ object frmMarkdown: TfrmMarkdown
       Size.Height = 748.000000000000000000
       Size.PlatformDefault = False
       WindowsEngine = IEOnly
+      OnDidFinishLoad = WebBrowser1DidFinishLoad
     end
     object mmEditor: TMemo
       Touch.InteractiveGestures = [Pan, LongTap, DoubleTap]
       DataDetectorTypes = []
+      OnChangeTracking = mmEditorChangeTracking
       Align = Left
       Size.Width = 513.000000000000000000
       Size.Height = 748.000000000000000000
@@ -88279,6 +88281,7 @@ object frmMarkdown: TfrmMarkdown
   object SaveDialog1: TSaveDialog
     DefaultExt = 'md'
     Filter = 'Markdown text file|*.md|Text file|*.txt|All|*.*'
+    Options = [ofHideReadOnly, ofNoChangeDir, ofEnableSizing]
     Left = 104
     Top = 216
   end
@@ -88287,6 +88290,11 @@ object frmMarkdown: TfrmMarkdown
     Top = 200
     object MenuItem1: TMenuItem
       Text = 'File'
+      object miNew: TMenuItem
+        Locked = True
+        Text = 'New'
+        OnClick = miNewClick
+      end
       object MenuItem2: TMenuItem
         Locked = True
         Text = 'Open'
@@ -88297,15 +88305,15 @@ object frmMarkdown: TfrmMarkdown
         Text = 'Save'
         OnClick = sbSaveClick
       end
-      object MenuItem4: TMenuItem
+      object miClose: TMenuItem
         Locked = True
         Text = 'Close'
-        OnClick = MenuItem4Click
+        OnClick = miCloseClick
       end
     end
   end
   object Timer1: TTimer
-    Interval = 5000
+    Interval = 3000
     OnTimer = Timer1Timer
     Left = 240
     Top = 136

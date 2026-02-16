@@ -1,5 +1,5 @@
 {
-  SME - Simple Markdown Editor
+	SME - Simple Markdown Editor v1.0.1
 	This is a simple markdown editor without any grand pretensions :)
 
 	2026 by Magno Lima - https://github.com/magnolima
@@ -44,9 +44,10 @@ type
 		MenuItem1: TMenuItem;
 		MenuItem2: TMenuItem;
 		MenuItem3: TMenuItem;
-		MenuItem4: TMenuItem;
+    miClose: TMenuItem;
 		Timer1: TTimer;
-    SpeedButton1: TSpeedButton;
+		SpeedButton1: TSpeedButton;
+    miNew: TMenuItem;
 		procedure sbOpenClick(Sender: TObject);
 		procedure sbSaveClick(Sender: TObject);
 		procedure SpeedButton2Click(Sender: TObject);
@@ -57,19 +58,27 @@ type
 		procedure FormShow(Sender: TObject);
 		procedure FormCreate(Sender: TObject);
 		procedure FormClose(Sender: TObject; var Action: TCloseAction);
-		procedure MenuItem4Click(Sender: TObject);
+		procedure miCloseClick(Sender: TObject);
 		procedure mmEditorKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
 		procedure Timer1Timer(Sender: TObject);
-    procedure SpeedButton1Click(Sender: TObject);
+		procedure SpeedButton1Click(Sender: TObject);
+		procedure WebBrowser1DidFinishLoad(ASender: TObject);
+		procedure miNewClick(Sender: TObject);
+		procedure mmEditorChangeTracking(Sender: TObject);
 	private
 		FHtmlFontScale: Double;
 		FKeyPressed: Boolean;
-		procedure OpenMarkdown(const Filename: string);
+		FChanged: Boolean;
+		FPendingPreviewScroll: Boolean;
+		FPendingScrollRatio: Double;
 		procedure RefreshPreview;
 		procedure ApplyMarkdownHeading(const HeadingLevel: Integer);
 		procedure ApplyCodeBlock;
 		procedure SaveWindowState;
 		procedure LoadWindowState;
+		procedure OpenMarkdown(const Filename: string);
+		procedure SaveMarkdown;
+		function ConfirmSaved: Boolean;
 		{ Private declarations }
 	public
 		{ Public declarations }
@@ -79,6 +88,7 @@ const
 	CONFIG_DIR = '.\config';
 	CONFIG_FILE = 'config.ini';
 	PROGRAM_NAME = 'Simple Markdown Editor';
+	PREVIEW_CARET_ANCHOR_ID = 'sme-current-line';
 
 var
 	frmMarkdown: TfrmMarkdown;
@@ -145,24 +155,41 @@ begin
 	Result := Result + '<style>' + css + '</style>' + #13 + '</head>' + #13 + '<body>'#13 + content + #13'</body></html>';
 end;
 
-function BlankPage: String;
+function InjectCaretAnchor(const Input, AnchorId: string; const LineIndex: Integer): string;
+var
+	Lines: TStringList;
 begin
-	Result := MakeHTML(LoadCSS(), '<div class="highlight_ai"></div>');
+	Result := Input;
+	if AnchorId.IsEmpty or (LineIndex < 0) then
+		Exit;
+
+	Lines := TStringList.Create;
+	try
+		Lines.Text := Input;
+		if (Lines.Count = 0) or (LineIndex >= Lines.Count) then
+			Exit;
+
+		// Insert as a standalone HTML block so markdown tokens on the target line
+		// (e.g. # heading, list markers) keep their original meaning.
+		Lines.Insert(LineIndex, '<div id="' + AnchorId + '"></div>');
+		Result := Lines.Text;
+	finally
+		Lines.Free;
+	end;
 end;
 
-function MarkDownToHtml(const Input: string; const baseUrl: String = ''): String;
+function MarkDownToHtml(const Input: string; const baseUrl: String = ''; const CaretLine: Integer = -1): String;
 var
 	md: TMarkdownProcessor;
 	uri, html: String;
 begin
-	html := Input.Trim;
-	md := TMarkdownProcessor.createDialect(mdCommonMark);
+	html := InjectCaretAnchor(Input, PREVIEW_CARET_ANCHOR_ID, CaretLine).Trim;
+	md := TMarkdownProcessor.createDialect(mdDaringFireball);
 	try
 		try
 			html := md.process(html);
 		except
-			// uncompleted text could raise exception with
-			// markdown processor, so we quietly exit... shhh!
+			// uncompleted text could raise exception with markdown processor, so we quietly ignore... shhh!
 			Exit;
 		end;
 		html := THTMLEncoding.html.Decode(html);
@@ -196,9 +223,37 @@ begin
 	end;
 end;
 
-procedure TfrmMarkdown.MenuItem4Click(Sender: TObject);
+procedure TfrmMarkdown.miCloseClick(Sender: TObject);
 begin
 	Close;
+end;
+
+procedure TfrmMarkdown.miNewClick(Sender: TObject);
+begin
+	if ConfirmSaved then
+	begin
+		mmEditor.Lines.Clear;
+		FChanged := False;
+		WebBrowser1.Navigate('about:blank');
+	end;
+end;
+
+function TfrmMarkdown.ConfirmSaved: Boolean;
+begin
+	Result := true;
+	if FChanged then
+	begin
+		if MessageDlg('File was changed. Save it now?', TMsgDlgType.mtWarning, [TMsgDlgBtn.mbYes, TMsgDlgBtn.mbNo], 0) = mrYes
+		then
+			SaveMarkdown
+		else
+			Result := False;
+	end;
+end;
+
+procedure TfrmMarkdown.mmEditorChangeTracking(Sender: TObject);
+begin
+	FChanged := true;
 end;
 
 procedure TfrmMarkdown.mmEditorKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
@@ -212,7 +267,7 @@ begin
 	// Restart the timer on every keypress so RefreshPreview
 	// only triggers after the full idle interval (debounce)
 	Timer1.Enabled := False;
-	Timer1.Enabled := True;
+	Timer1.Enabled := true;
 end;
 
 procedure TfrmMarkdown.SaveWindowState;
@@ -244,7 +299,10 @@ end;
 procedure TfrmMarkdown.FormShow(Sender: TObject);
 begin
 	if not ParamStr(1).IsEmpty then
+	begin
 		OpenMarkdown(ParamStr(1));
+		OpenDialog1.Filename := ParamStr(1);
+	end;
 end;
 
 procedure TfrmMarkdown.sbFontBiggerClick(Sender: TObject);
@@ -277,15 +335,28 @@ end;
 procedure TfrmMarkdown.RefreshPreview;
 var
 	html, baseUrl: string;
+	AnchorLine: Integer;
 begin
 	// Build file:/// base URL from the markdown file's directory
 	baseUrl := ExtractFilePath(OpenDialog1.Filename);
 	if not baseUrl.IsEmpty then
 		baseUrl := 'file:///' + StringReplace(baseUrl, '\', '/', [rfReplaceAll]);
 
-	html := MarkDownToHtml(mmEditor.Lines.Text, baseUrl);
+	AnchorLine := mmEditor.CaretPosition.Line;
+	if AnchorLine < 0 then
+		AnchorLine := 0
+	else if AnchorLine >= mmEditor.Lines.Count then
+		AnchorLine := mmEditor.Lines.Count - 1;
+
+	html := MarkDownToHtml(mmEditor.Lines.Text, baseUrl, AnchorLine);
 	if not html.IsEmpty then
 	begin
+		if mmEditor.Lines.Count > 1 then
+			FPendingScrollRatio := AnchorLine / (mmEditor.Lines.Count - 1)
+		else
+			FPendingScrollRatio := 0;
+
+		FPendingPreviewScroll := true;
 		WebBrowser1.LoadFromStrings(html, TEncoding.UTF8, '');
 		TFile.WriteAllText('c:\temp\test.html', html, TEncoding.UTF8);
 	end;
@@ -334,25 +405,27 @@ begin
 end;
 
 procedure TfrmMarkdown.OpenMarkdown(const Filename: string);
-var
-	html: String;
 begin
-	if not FileExists(Filename) then
-		Exit;
-	html := TFile.ReadAllText(Filename, TEncoding.UTF8);
-	mmEditor.Text := html;
-	// Reset font scale when opening file
-	FHtmlFontScale := 1.0;
-	mmEditor.BeginUpdate;
-	mmEditor.StyledSettings := mmEditor.StyledSettings - [TStyledSetting.Size];
-	mmEditor.Font.Size := 14;
-	mmEditor.EndUpdate;
-	html := MarkDownToHtml(html);
-	WebBrowser1.LoadFromStrings(html, TEncoding.UTF8, '');
+	if Filename <> '' then
+	begin
+		if FileExists(Filename) then
+		begin
+			mmEditor.Lines.LoadFromFile(Filename);
+			FChanged := False;
+			RefreshPreview;
+			Caption := PROGRAM_NAME + ' - ' + ExtractFileName(Filename);
+		end
+		else
+			ShowMessage('File not found: ' + Filename);
+	end;
 end;
 
 procedure TfrmMarkdown.sbOpenClick(Sender: TObject);
 begin
+	if FChanged then
+		ConfirmSaved;
+
+	OpenDialog1.FileName := ExtractFileName(OpenDialog1.Filename);
 	if OpenDialog1.Execute then
 	begin
 		self.Caption := PROGRAM_NAME + ' - ' + OpenDialog1.Filename;
@@ -374,9 +447,27 @@ procedure TfrmMarkdown.Timer1Timer(Sender: TObject);
 begin
 	if FKeyPressed then
 	begin
-		FKeyPressed := false;
+		FKeyPressed := False;
 		RefreshPreview;
 		self.Caption := PROGRAM_NAME + ' - ' + OpenDialog1.Filename;
+	end;
+end;
+
+procedure TfrmMarkdown.WebBrowser1DidFinishLoad(ASender: TObject);
+begin
+	if not FPendingPreviewScroll then
+		Exit;
+
+	FPendingPreviewScroll := False;
+	try
+		WebBrowser1.EvaluateJavaScript('var el=document.getElementById("' + PREVIEW_CARET_ANCHOR_ID + '");' + 'if(el){' +
+			 'var top=(el.getBoundingClientRect().top + (window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0)) - 120;'
+			 + 'if(top<0){top=0;}' + 'window.scrollTo(0, top);' + '}else{' +
+			 'var h=Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) - window.innerHeight;' +
+			 'if(h<0){h=0;}' + 'window.scrollTo(0, Math.round(h*' + StringReplace(FloatToStr(FPendingScrollRatio), ',', '.',
+			 [rfReplaceAll]) + '));' + '}');
+	except
+		// Keep the editor usable even if a webview engine does not support JS evaluation.
 	end;
 end;
 
@@ -398,6 +489,8 @@ end;
 
 procedure TfrmMarkdown.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
+	if FChanged then
+    ConfirmSaved;
 	SaveWindowState;
 end;
 
@@ -406,18 +499,18 @@ begin
 	self.Caption := PROGRAM_NAME;
 	mmEditor.StyledSettings := mmEditor.StyledSettings - [TStyledSetting.Size];
 	FHtmlFontScale := 1.0;
+	FPendingPreviewScroll := False;
+	FPendingScrollRatio := 0;
 	mmEditor.Font.Size := 14;
-
 	LoadWindowState;
-	WebBrowser1.LoadFromStrings(BlankPage, TEncoding.UTF8, '');
 end;
 
-procedure TfrmMarkdown.sbSaveClick(Sender: TObject);
+procedure TfrmMarkdown.SaveMarkdown;
 var
 	localfilename: string;
 begin
 	localfilename := OpenDialog1.Filename;
-	SaveDialog1.Filename := localfilename;
+	SaveDialog1.Filename := ExtractFileName(localfilename);
 	if SaveDialog1.Execute then
 		localfilename := SaveDialog1.Filename
 	else
@@ -428,6 +521,12 @@ begin
 	self.Caption := PROGRAM_NAME + ' - ' + localfilename;
 	OpenDialog1.Filename := localfilename;
 	mmEditor.Lines.SaveToFile(localfilename, TEncoding.UTF8);
+	FChanged := False;
+end;
+
+procedure TfrmMarkdown.sbSaveClick(Sender: TObject);
+begin
+	SaveMarkdown;
 end;
 
 end.
