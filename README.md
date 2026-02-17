@@ -70,7 +70,12 @@ The application injects runtime values (such as background color and body font s
 - `SimpleMarkdownEditor.gui.fmx`: form/UI layout.
 - `SimpleMarkdownEditor.css`: HTML preview theme.
 
-## Latest fixes - 2026-02-16
+## Latest fixes
+### 2026-02-17
+- Reverted from mdDaringFireball dialect to mdCommonMark due some formatting issues.
+- Fixed issue when loading a markdown that contains images
+- More minor fixes
+### 2026-02-16
 - Added confirmation to save file if changes were made
 - Once editing a page the html preview should scroll to the last changed position, this is a ugly way to try sync editing with preview
 - Reduced the refresh timeout from 5 to 3 seconds

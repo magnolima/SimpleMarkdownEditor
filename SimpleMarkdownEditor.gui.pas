@@ -23,7 +23,6 @@ type
 		Panel1: TPanel;
 		Panel2: TPanel;
 		Panel3: TPanel;
-		Panel4: TPanel;
 		Panel5: TPanel;
 		mmEditor: TMemo;
 		Splitter1: TSplitter;
@@ -44,10 +43,14 @@ type
 		MenuItem1: TMenuItem;
 		MenuItem2: TMenuItem;
 		MenuItem3: TMenuItem;
-    miClose: TMenuItem;
+		miClose: TMenuItem;
 		Timer1: TTimer;
 		SpeedButton1: TSpeedButton;
-    miNew: TMenuItem;
+		miNew: TMenuItem;
+    sbBold: TSpeedButton;
+    Panel6: TPanel;
+    sbStrike: TSpeedButton;
+    sbItalic: TSpeedButton;
 		procedure sbOpenClick(Sender: TObject);
 		procedure sbSaveClick(Sender: TObject);
 		procedure SpeedButton2Click(Sender: TObject);
@@ -65,6 +68,10 @@ type
 		procedure WebBrowser1DidFinishLoad(ASender: TObject);
 		procedure miNewClick(Sender: TObject);
 		procedure mmEditorChangeTracking(Sender: TObject);
+		procedure FormActivate(Sender: TObject);
+    procedure sbBoldClick(Sender: TObject);
+    procedure sbItalicClick(Sender: TObject);
+    procedure sbStrikeClick(Sender: TObject);
 	private
 		FHtmlFontScale: Double;
 		FKeyPressed: Boolean;
@@ -79,6 +86,7 @@ type
 		procedure OpenMarkdown(const Filename: string);
 		procedure SaveMarkdown;
 		function ConfirmSaved: Boolean;
+    procedure ApplyTextFormat(memo: TMemo; TextFormat: string);
 		{ Private declarations }
 	public
 		{ Public declarations }
@@ -184,7 +192,7 @@ var
 	uri, html: String;
 begin
 	html := InjectCaretAnchor(Input, PREVIEW_CARET_ANCHOR_ID, CaretLine).Trim;
-	md := TMarkdownProcessor.createDialect(mdDaringFireball);
+	md := TMarkdownProcessor.createDialect(mdCommonMark);
 	try
 		try
 			html := md.process(html);
@@ -425,7 +433,7 @@ begin
 	if FChanged then
 		ConfirmSaved;
 
-	OpenDialog1.FileName := ExtractFileName(OpenDialog1.Filename);
+	OpenDialog1.Filename := ExtractFileName(OpenDialog1.Filename);
 	if OpenDialog1.Execute then
 	begin
 		self.Caption := PROGRAM_NAME + ' - ' + OpenDialog1.Filename;
@@ -441,6 +449,11 @@ end;
 procedure TfrmMarkdown.SpeedButton2Click(Sender: TObject);
 begin
 	RefreshPreview;
+end;
+
+procedure TfrmMarkdown.sbItalicClick(Sender: TObject);
+begin
+	ApplyTextFormat(mmEditor, '_');
 end;
 
 procedure TfrmMarkdown.Timer1Timer(Sender: TObject);
@@ -487,10 +500,15 @@ begin
 	ApplyCodeBlock;
 end;
 
+procedure TfrmMarkdown.FormActivate(Sender: TObject);
+begin
+	RefreshPreview;
+end;
+
 procedure TfrmMarkdown.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
 	if FChanged then
-    ConfirmSaved;
+		ConfirmSaved;
 	SaveWindowState;
 end;
 
@@ -510,6 +528,7 @@ var
 	localfilename: string;
 begin
 	localfilename := OpenDialog1.Filename;
+  SaveDialog1.InitialDir := ExtractFilePath(localfilename);
 	SaveDialog1.Filename := ExtractFileName(localfilename);
 	if SaveDialog1.Execute then
 		localfilename := SaveDialog1.Filename
@@ -527,6 +546,54 @@ end;
 procedure TfrmMarkdown.sbSaveClick(Sender: TObject);
 begin
 	SaveMarkdown;
+end;
+
+procedure TfrmMarkdown.sbStrikeClick(Sender: TObject);
+begin
+	ApplyTextFormat(mmEditor, '~~');
+end;
+
+procedure TfrmMarkdown.ApplyTextFormat(memo: TMemo; TextFormat: string);
+var
+	SelStartPos, SelLen: Integer;
+	SelectedText, FullText: string;
+begin
+	SelStartPos := memo.SelStart;
+	SelLen := memo.SelLength;
+
+	if SelLen <= 0 then
+		Exit;
+
+	FullText := memo.Text;
+	SelectedText := Copy(FullText, SelStartPos + 1, SelLen);
+
+	// remove is already exists
+	if (SelLen >= 4) and SelectedText.StartsWith(TextFormat) and SelectedText.EndsWith(TextFormat) then
+	begin
+		Delete(FullText, SelStartPos + 1, SelLen);
+		Insert(Copy(SelectedText, 3, SelLen - 4), FullText, SelStartPos + 1);
+		memo.Text := FullText;
+
+		memo.SelStart := SelStartPos;
+		memo.SelLength := SelLen - 4;
+	end
+	else
+	begin
+		Delete(FullText, SelStartPos + 1, SelLen);
+		Insert(TextFormat + SelectedText + TextFormat, FullText, SelStartPos + 1);
+		memo.Text := FullText;
+
+		memo.SelStart := SelStartPos;
+		memo.SelLength := SelLen + 4;
+  end;
+
+	RefreshPreview;
+
+end;
+
+procedure TfrmMarkdown.sbBoldClick(Sender: TObject);
+begin
+	ApplyTextFormat(mmEditor, '**');
 end;
 
 end.

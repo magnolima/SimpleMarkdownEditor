@@ -8,6 +8,7 @@ object frmMarkdown: TfrmMarkdown
   FormFactor.Width = 320
   FormFactor.Height = 480
   FormFactor.Devices = [Desktop]
+  OnActivate = FormActivate
   OnCreate = FormCreate
   OnClose = FormClose
   OnShow = FormShow
@@ -24,6 +25,7 @@ object frmMarkdown: TfrmMarkdown
       Size.Height = 748.000000000000000000
       Size.PlatformDefault = False
       WindowsEngine = IEOnly
+      CanFocus = False
       OnDidFinishLoad = WebBrowser1DidFinishLoad
     end
     object mmEditor: TMemo
@@ -125,7 +127,7 @@ object frmMarkdown: TfrmMarkdown
       StyledSettings = [Family, FontColor]
       Margins.Left = 2.000000000000000000
       Margins.Right = 2.000000000000000000
-      Position.X = 251.000000000000000000
+      Position.X = 410.000000000000000000
       Size.Width = 49.000000000000000000
       Size.Height = 44.000000000000000000
       Size.PlatformDefault = False
@@ -172,7 +174,7 @@ object frmMarkdown: TfrmMarkdown
       StyledSettings = [Family, FontColor]
       Margins.Left = 2.000000000000000000
       Margins.Right = 2.000000000000000000
-      Position.X = 304.000000000000000000
+      Position.X = 357.000000000000000000
       Size.Width = 49.000000000000000000
       Size.Height = 44.000000000000000000
       Size.PlatformDefault = False
@@ -188,7 +190,7 @@ object frmMarkdown: TfrmMarkdown
       StyledSettings = [Family, FontColor]
       Margins.Left = 2.000000000000000000
       Margins.Right = 2.000000000000000000
-      Position.X = 357.000000000000000000
+      Position.X = 304.000000000000000000
       Size.Width = 49.000000000000000000
       Size.Height = 44.000000000000000000
       Size.PlatformDefault = False
@@ -198,21 +200,13 @@ object frmMarkdown: TfrmMarkdown
       TextSettings.Trimming = None
       OnClick = sbTitleClick
     end
-    object Panel4: TPanel
-      Align = Left
-      Position.X = 461.000000000000000000
-      Size.Width = 4.000000000000000000
-      Size.Height = 44.000000000000000000
-      Size.PlatformDefault = False
-      TabOrder = 8
-    end
     object SpeedButton6: TSpeedButton
       Tag = 3
       Align = Left
       StyledSettings = [Family, FontColor]
       Margins.Left = 2.000000000000000000
       Margins.Right = 2.000000000000000000
-      Position.X = 410.000000000000000000
+      Position.X = 251.000000000000000000
       Size.Width = 49.000000000000000000
       Size.Height = 44.000000000000000000
       Size.PlatformDefault = False
@@ -223,7 +217,7 @@ object frmMarkdown: TfrmMarkdown
     end
     object Panel5: TPanel
       Align = Left
-      Position.X = 526.000000000000000000
+      Position.X = 685.000000000000000000
       Size.Width = 4.000000000000000000
       Size.Height = 44.000000000000000000
       Size.PlatformDefault = False
@@ -243,6 +237,59 @@ object frmMarkdown: TfrmMarkdown
       TextSettings.Font.StyleExt = {00060000000000000004000000}
       TextSettings.Trimming = None
       OnClick = SpeedButton1Click
+    end
+    object sbBold: TSpeedButton
+      Tag = 3
+      Align = Left
+      StyledSettings = [Family, FontColor]
+      Margins.Left = 2.000000000000000000
+      Margins.Right = 2.000000000000000000
+      Position.X = 528.000000000000000000
+      Size.Width = 49.000000000000000000
+      Size.Height = 44.000000000000000000
+      Size.PlatformDefault = False
+      Text = 'Bold'
+      TextSettings.Font.StyleExt = {00070000000000000004000000}
+      TextSettings.Trimming = None
+      OnClick = sbBoldClick
+    end
+    object Panel6: TPanel
+      Align = Left
+      Position.X = 461.000000000000000000
+      Size.Width = 4.000000000000000000
+      Size.Height = 44.000000000000000000
+      Size.PlatformDefault = False
+      TabOrder = 8
+    end
+    object sbStrike: TSpeedButton
+      Tag = 3
+      Align = Left
+      StyledSettings = [Family, FontColor]
+      Margins.Left = 2.000000000000000000
+      Margins.Right = 2.000000000000000000
+      Position.X = 634.000000000000000000
+      Size.Width = 49.000000000000000000
+      Size.Height = 44.000000000000000000
+      Size.PlatformDefault = False
+      Text = 'Strike'
+      TextSettings.Font.StyleExt = {08040000000000000004000000}
+      TextSettings.Trimming = None
+      OnClick = sbStrikeClick
+    end
+    object sbItalic: TSpeedButton
+      Tag = 3
+      Align = Left
+      StyledSettings = [Family, FontColor]
+      Margins.Left = 2.000000000000000000
+      Margins.Right = 2.000000000000000000
+      Position.X = 581.000000000000000000
+      Size.Width = 49.000000000000000000
+      Size.Height = 44.000000000000000000
+      Size.PlatformDefault = False
+      Text = 'Italic'
+      TextSettings.Font.StyleExt = {00040000000100000004000000}
+      TextSettings.Trimming = None
+      OnClick = sbItalicClick
     end
   end
   object OpenDialog1: TOpenDialog
@@ -88281,7 +88328,6 @@ object frmMarkdown: TfrmMarkdown
   object SaveDialog1: TSaveDialog
     DefaultExt = 'md'
     Filter = 'Markdown text file|*.md|Text file|*.txt|All|*.*'
-    Options = [ofHideReadOnly, ofNoChangeDir, ofEnableSizing]
     Left = 104
     Top = 216
   end
