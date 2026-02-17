@@ -44,7 +44,6 @@ type
 		MenuItem2: TMenuItem;
 		MenuItem3: TMenuItem;
 		miClose: TMenuItem;
-		Timer1: TTimer;
 		SpeedButton1: TSpeedButton;
 		miNew: TMenuItem;
     sbBold: TSpeedButton;
@@ -63,7 +62,6 @@ type
 		procedure FormClose(Sender: TObject; var Action: TCloseAction);
 		procedure miCloseClick(Sender: TObject);
 		procedure mmEditorKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
-		procedure Timer1Timer(Sender: TObject);
 		procedure SpeedButton1Click(Sender: TObject);
 		procedure WebBrowser1DidFinishLoad(ASender: TObject);
 		procedure miNewClick(Sender: TObject);
@@ -76,6 +74,7 @@ type
 		FHtmlFontScale: Double;
 		FKeyPressed: Boolean;
 		FChanged: Boolean;
+		FPreviewInitialized: Boolean;
 		FPendingPreviewScroll: Boolean;
 		FPendingScrollRatio: Double;
 		procedure RefreshPreview;
@@ -159,8 +158,36 @@ begin
 		 '<meta name="viewport" content="width=device-width, initial-scale=1.0">'#13;
 	// Inject <base> tag so the browser resolves relative paths (images, etc.)
 	if not baseUrl.IsEmpty then
-		Result := Result + '<base href="' + baseUrl + '">' + #13;
-	Result := Result + '<style>' + css + '</style>' + #13 + '</head>' + #13 + '<body>'#13 + content + #13'</body></html>';
+		Result := Result + '<base id="sme-base" href="' + baseUrl + '">' + #13
+	else
+		Result := Result + '<base id="sme-base">' + #13;
+	Result := Result + '<style id="sme-style">' + css + '</style>' + #13 +
+		 '<script>' +
+		 'function smeScrollToAnchor(ratio){' +
+		 'var el=document.getElementById("' + PREVIEW_CARET_ANCHOR_ID + '");' +
+		 'if(el){' +
+		 'var top=(el.getBoundingClientRect().top + (window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0)) - 120;' +
+		 'if(top<0){top=0;}' +
+		 'window.scrollTo(0, top);' +
+		 '}else{' +
+		 'var h=Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) - window.innerHeight;' +
+		 'if(h<0){h=0;}' +
+		 'window.scrollTo(0, Math.round(h*ratio));' +
+		 '}' +
+		 '}' +
+		 'function smeUpdatePreview(css, html, baseHref, ratio){' +
+		 'var styleEl=document.getElementById("sme-style");' +
+		 'if(styleEl){styleEl.textContent=css;}' +
+		 'var baseEl=document.getElementById("sme-base");' +
+		 'if(baseEl){if(baseHref){baseEl.setAttribute("href", baseHref);}else{baseEl.removeAttribute("href");}}' +
+		 'var root=document.getElementById("sme-preview-root");' +
+		 'if(root){root.innerHTML=html;}' +
+		 'smeScrollToAnchor(ratio||0);' +
+		 '}' +
+		 '</script>' + #13 +
+		 '</head>' + #13 + '<body>'#13 +
+		 '<div id="sme-preview-root">' + content + '</div>' + #13 +
+		 '</body></html>';
 end;
 
 function InjectCaretAnchor(const Input, AnchorId: string; const LineIndex: Integer): string;
@@ -186,7 +213,7 @@ begin
 	end;
 end;
 
-function MarkDownToHtml(const Input: string; const baseUrl: String = ''; const CaretLine: Integer = -1): String;
+function MarkDownToBodyHtml(const Input: string; const CaretLine: Integer = -1): String;
 var
 	md: TMarkdownProcessor;
 	uri, html: String;
@@ -203,10 +230,52 @@ begin
 		html := THTMLEncoding.html.Decode(html);
 		uri := 'file:///' + StringReplace(ExtractFilePath(ParamStr(0)), TPath.DirectorySeparatorChar, '/', [rfReplaceAll]);
 		html := StringReplace(html, '%uri%', uri, [rfReplaceAll]);
-		Result := MakeHTML(LoadCSS(), html, baseUrl);
+		Result := html;
 	finally
 		md.Free;
 	end;
+end;
+
+function MarkDownToHtml(const Input: string; const baseUrl: String = ''; const CaretLine: Integer = -1): String;
+var
+	bodyHtml: string;
+begin
+	bodyHtml := MarkDownToBodyHtml(Input, CaretLine);
+	if bodyHtml.IsEmpty then
+		Exit;
+	Result := MakeHTML(LoadCSS(), bodyHtml, baseUrl);
+end;
+
+function JavaScriptQuotedString(const Value: string): string;
+var
+	i: Integer;
+	ch: Char;
+begin
+	Result := '''';
+	for i := 1 to Value.Length do
+	begin
+		ch := Value[i];
+		case ch of
+			'\': Result := Result + #92#92;
+			'''': Result := Result + #92#39;
+			#8: Result := Result + #92 + 'b';
+			#9: Result := Result + #92 + 't';
+			#10: Result := Result + #92 + 'n';
+			#12: Result := Result + #92 + 'f';
+			#13: Result := Result + #92 + 'r';
+		else
+			if Ord(ch) < 32 then
+				Result := Result + #92 + 'u' + IntToHex(Ord(ch), 4)
+			else
+				Result := Result + ch;
+		end;
+	end;
+	Result := Result + '''';
+end;
+
+function FloatToJavaScript(const Value: Double): string;
+begin
+	Result := StringReplace(FloatToStr(Value), ',', '.', [rfReplaceAll]);
 end;
 
 procedure TfrmMarkdown.LoadWindowState;
@@ -242,6 +311,7 @@ begin
 	begin
 		mmEditor.Lines.Clear;
 		FChanged := False;
+		FPreviewInitialized := False;
 		WebBrowser1.Navigate('about:blank');
 	end;
 end;
@@ -266,16 +336,13 @@ end;
 
 procedure TfrmMarkdown.mmEditorKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
 begin
-	if not FKeyPressed then
-	begin
+	if not self.Caption.EndsWith('*') then
 		self.Caption := PROGRAM_NAME + ' - ' + OpenDialog1.Filename + '*';
-		FKeyPressed := true;
-	end;
 
-	// Restart the timer on every keypress so RefreshPreview
-	// only triggers after the full idle interval (debounce)
-	Timer1.Enabled := False;
-	Timer1.Enabled := true;
+	// Timer-based debounce disabled for now (easy rollback: uncomment lines below).
+	// Timer1.Enabled := False;
+	// Timer1.Enabled := true;
+	RefreshPreview;
 end;
 
 procedure TfrmMarkdown.SaveWindowState;
@@ -342,7 +409,7 @@ end;
 
 procedure TfrmMarkdown.RefreshPreview;
 var
-	html, baseUrl: string;
+	html, bodyHtml, cssText, baseUrl, updateScript: string;
 	AnchorLine: Integer;
 begin
 	// Build file:/// base URL from the markdown file's directory
@@ -356,16 +423,38 @@ begin
 	else if AnchorLine >= mmEditor.Lines.Count then
 		AnchorLine := mmEditor.Lines.Count - 1;
 
-	html := MarkDownToHtml(mmEditor.Lines.Text, baseUrl, AnchorLine);
-	if not html.IsEmpty then
+	bodyHtml := MarkDownToBodyHtml(mmEditor.Lines.Text, AnchorLine);
+	if not bodyHtml.IsEmpty then
 	begin
+		cssText := LoadCSS();
 		if mmEditor.Lines.Count > 1 then
 			FPendingScrollRatio := AnchorLine / (mmEditor.Lines.Count - 1)
 		else
 			FPendingScrollRatio := 0;
 
-		FPendingPreviewScroll := true;
-		WebBrowser1.LoadFromStrings(html, TEncoding.UTF8, '');
+		if not FPreviewInitialized then
+		begin
+			html := MakeHTML(cssText, bodyHtml, baseUrl);
+			FPendingPreviewScroll := true;
+			WebBrowser1.LoadFromStrings(html, TEncoding.UTF8, '');
+			FPreviewInitialized := True;
+		end
+		else
+		begin
+			updateScript := 'if(window.smeUpdatePreview){window.smeUpdatePreview(' +
+				 JavaScriptQuotedString(cssText) + ',' +
+				 JavaScriptQuotedString(bodyHtml) + ',' +
+				 JavaScriptQuotedString(baseUrl) + ',' +
+				 FloatToJavaScript(FPendingScrollRatio) + ');}';
+			try
+				WebBrowser1.EvaluateJavaScript(updateScript);
+			except
+				// Fallback for webviews that do not allow JS evaluation.
+				html := MakeHTML(cssText, bodyHtml, baseUrl);
+				FPendingPreviewScroll := true;
+				WebBrowser1.LoadFromStrings(html, TEncoding.UTF8, '');
+			end;
+		end;
 	end;
 	mmEditor.SetFocus;
 end;
@@ -455,16 +544,6 @@ begin
 	ApplyTextFormat(mmEditor, '_');
 end;
 
-procedure TfrmMarkdown.Timer1Timer(Sender: TObject);
-begin
-	if FKeyPressed then
-	begin
-		FKeyPressed := False;
-		RefreshPreview;
-		self.Caption := PROGRAM_NAME + ' - ' + OpenDialog1.Filename;
-	end;
-end;
-
 procedure TfrmMarkdown.WebBrowser1DidFinishLoad(ASender: TObject);
 begin
 	if not FPendingPreviewScroll then
@@ -472,12 +551,7 @@ begin
 
 	FPendingPreviewScroll := False;
 	try
-		WebBrowser1.EvaluateJavaScript('var el=document.getElementById("' + PREVIEW_CARET_ANCHOR_ID + '");' + 'if(el){' +
-			 'var top=(el.getBoundingClientRect().top + (window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0)) - 120;'
-			 + 'if(top<0){top=0;}' + 'window.scrollTo(0, top);' + '}else{' +
-			 'var h=Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) - window.innerHeight;' +
-			 'if(h<0){h=0;}' + 'window.scrollTo(0, Math.round(h*' + StringReplace(FloatToStr(FPendingScrollRatio), ',', '.',
-			 [rfReplaceAll]) + '));' + '}');
+		WebBrowser1.EvaluateJavaScript('if(window.smeScrollToAnchor){window.smeScrollToAnchor(' + FloatToJavaScript(FPendingScrollRatio) + ');}');
 	except
 		// Keep the editor usable even if a webview engine does not support JS evaluation.
 	end;
@@ -516,6 +590,7 @@ begin
 	self.Caption := PROGRAM_NAME;
 	mmEditor.StyledSettings := mmEditor.StyledSettings - [TStyledSetting.Size];
 	FHtmlFontScale := 1.0;
+	FPreviewInitialized := False;
 	FPendingPreviewScroll := False;
 	FPendingScrollRatio := 0;
 	mmEditor.Font.Size := 14;

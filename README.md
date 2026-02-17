@@ -72,6 +72,7 @@ The application injects runtime values (such as background color and body font s
 
 ## Latest fixes
 ### 2026-02-17
+- Almost **instant refresh** updates for the HTML preview
 - Reverted from mdDaringFireball dialect to mdCommonMark due some formatting issues.
 - Fixed issue when loading a markdown that contains images
 - More minor fixes

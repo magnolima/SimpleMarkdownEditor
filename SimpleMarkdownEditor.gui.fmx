@@ -88358,10 +88358,4 @@ object frmMarkdown: TfrmMarkdown
       end
     end
   end
-  object Timer1: TTimer
-    Interval = 3000
-    OnTimer = Timer1Timer
-    Left = 240
-    Top = 136
-  end
 end
