@@ -50,7 +50,7 @@ type
     sbBold: TSpeedButton;
     Panel6: TPanel;
     sbStrike: TSpeedButton;
-    sbItalic: TSpeedButton;
+		sbItalic: TSpeedButton;
 		procedure sbOpenClick(Sender: TObject);
 		procedure sbSaveClick(Sender: TObject);
 		procedure SpeedButton2Click(Sender: TObject);
@@ -366,7 +366,6 @@ begin
 
 		FPendingPreviewScroll := true;
 		WebBrowser1.LoadFromStrings(html, TEncoding.UTF8, '');
-		TFile.WriteAllText('c:\temp\test.html', html, TEncoding.UTF8);
 	end;
 	mmEditor.SetFocus;
 end;
