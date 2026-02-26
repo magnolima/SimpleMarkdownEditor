@@ -24,7 +24,7 @@ object frmMarkdown: TfrmMarkdown
       Size.Width = 973.000000000000000000
       Size.Height = 748.000000000000000000
       Size.PlatformDefault = False
-      WindowsEngine = IEOnly
+      WindowsEngine = EdgeIfAvailable
       CanFocus = False
       OnDidFinishLoad = WebBrowser1DidFinishLoad
     end

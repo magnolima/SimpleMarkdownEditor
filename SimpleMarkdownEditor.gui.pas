@@ -506,7 +506,7 @@ begin
 	begin
 		if FileExists(Filename) then
 		begin
-			mmEditor.Lines.LoadFromFile(Filename);
+			mmEditor.Lines.LoadFromFile(Filename, TEncoding.UTF8);
 			FChanged := False;
 			RefreshPreview;
 			Caption := PROGRAM_NAME + ' - ' + ExtractFileName(Filename);
