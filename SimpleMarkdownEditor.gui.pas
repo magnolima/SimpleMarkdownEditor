@@ -14,13 +14,11 @@ uses
 	FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs, FMX.Memo.Types, FMX.StdCtrls, FMX.ScrollBox, FMX.Memo,
 	FMX.Controls.Presentation, FMX.WebBrowser, MarkdownProcessor, System.Net.HttpClient, System.NetEncoding,
 	System.Net.HttpClientComponent, System.IOUtils, FMX.Platform, System.StrUtils, System.IniFiles, System.ImageList,
-	FMX.ImgList, FMX.Menus;
+	FMX.ImgList, FMX.Menus, System.RegularExpressions;
 
 type
 	TfrmMarkdown = class(TForm)
 		WebBrowser1: TWebBrowser;
-		StyleBook1: TStyleBook;
-		Panel1: TPanel;
 		Panel2: TPanel;
 		Panel3: TPanel;
 		Panel5: TPanel;
@@ -50,6 +48,8 @@ type
     Panel6: TPanel;
     sbStrike: TSpeedButton;
 		sbItalic: TSpeedButton;
+    SpeedButton3: TSpeedButton;
+    ImageList1: TImageList;
 		procedure sbOpenClick(Sender: TObject);
 		procedure sbSaveClick(Sender: TObject);
 		procedure SpeedButton2Click(Sender: TObject);
@@ -77,6 +77,7 @@ type
 		FPreviewInitialized: Boolean;
 		FPendingPreviewScroll: Boolean;
 		FPendingScrollRatio: Double;
+		FPendingInitialLoad: Boolean;
 		procedure RefreshPreview;
 		procedure ApplyMarkdownHeading(const HeadingLevel: Integer);
 		procedure ApplyCodeBlock;
@@ -184,6 +185,19 @@ begin
 		 'if(root){root.innerHTML=html;}' +
 		 'smeScrollToAnchor(ratio||0);' +
 		 '}' +
+		 'document.addEventListener("click", function(e) {' +
+		 'var t = e.target;' +
+		 'while(t && t.tagName !== "A" && t !== document.body) { t = t.parentNode; }' +
+		 'if(t && t.tagName === "A") {' +
+		 'var href = t.getAttribute("href") || "";' +
+		 'if (href.charAt(0) === "#") {' +
+		 'e.preventDefault();' +
+		 'var id = href.substring(1);' +
+		 'var el = document.getElementById(id);' +
+		 'if(el) { el.scrollIntoView(true); }' +
+		 '}' +
+		 '}' +
+		 '});' +
 		 '</script>' + #13 +
 		 '</head>' + #13 + '<body>'#13 +
 		 '<div id="sme-preview-root">' + content + '</div>' + #13 +
@@ -213,6 +227,43 @@ begin
 	end;
 end;
 
+function AddHeadingAnchors(const Html: string): string;
+var
+	RegEx: TRegEx;
+	Match: TMatch;
+	HeadingLevel, HeadingText, AnchorId, Replacement: string;
+	LResult: string;
+	LastPos: Integer;
+begin
+	LResult := '';
+	LastPos := 1;
+	RegEx := TRegEx.Create('<h([1-6])>(.*?)</h\1>', [roIgnoreCase, roSingleLine]);
+	Match := RegEx.Match(Html);
+	
+	while Match.Success do
+	begin
+		// Copy text before the match
+		LResult := LResult + Copy(Html, LastPos, Match.Index - LastPos);
+		
+		HeadingLevel := Match.Groups[1].Value;
+		HeadingText := Match.Groups[2].Value;
+
+		AnchorId := HeadingText.ToLower.Trim;
+		AnchorId := TRegEx.Replace(AnchorId, '<.*?>', ''); // strip HTML tags
+		AnchorId := TRegEx.Replace(AnchorId, '[^\w\s-]', ''); // remove non-alphanumeric, except spaces and dashes
+		AnchorId := StringReplace(AnchorId, ' ', '-', [rfReplaceAll]); // every space becomes a single dash
+
+		Replacement := Format('<h%s id="%s">%s</h%s>', [HeadingLevel, AnchorId, HeadingText, HeadingLevel]);
+		LResult := LResult + Replacement;
+		
+		LastPos := Match.Index + Match.Length;
+		Match := Match.NextMatch;
+	end;
+	
+	LResult := LResult + Copy(Html, LastPos, MaxInt);
+	Result := LResult;
+end;
+
 function MarkDownToBodyHtml(const Input: string; const CaretLine: Integer = -1): String;
 var
 	md: TMarkdownProcessor;
@@ -230,6 +281,7 @@ begin
 		html := THTMLEncoding.html.Decode(html);
 		uri := 'file:///' + StringReplace(ExtractFilePath(ParamStr(0)), TPath.DirectorySeparatorChar, '/', [rfReplaceAll]);
 		html := StringReplace(html, '%uri%', uri, [rfReplaceAll]);
+		html := AddHeadingAnchors(html);
 		Result := html;
 	finally
 		md.Free;
@@ -375,8 +427,9 @@ procedure TfrmMarkdown.FormShow(Sender: TObject);
 begin
 	if not ParamStr(1).IsEmpty then
 	begin
-		OpenMarkdown(ParamStr(1));
-		OpenDialog1.Filename := ParamStr(1);
+	 //	OpenMarkdown(ParamStr(1));
+		//OpenDialog1.Filename := ParamStr(1);
+		FPendingInitialLoad := True;  // Mark that we need a refresh after activation
 	end;
 end;
 
@@ -412,8 +465,14 @@ var
 	html, bodyHtml, cssText, baseUrl, updateScript: string;
 	AnchorLine: Integer;
 begin
+	// Don't refresh if memo is empty (e.g., during initial load)
+	if (mmEditor.Lines.Count = 0) or ((mmEditor.Lines.Count = 1) and mmEditor.Lines[0].IsEmpty) then
+		Exit;
+
 	// Build file:/// base URL from the markdown file's directory
 	baseUrl := ExtractFilePath(OpenDialog1.Filename);
+	if baseUrl.IsEmpty then
+     baseUrl := ExtractFilePath(ParamStr(0));
 	if not baseUrl.IsEmpty then
 		baseUrl := 'file:///' + StringReplace(baseUrl, '\', '/', [rfReplaceAll]);
 
@@ -506,10 +565,15 @@ begin
 	begin
 		if FileExists(Filename) then
 		begin
+			FPendingPreviewScroll := False;
 			mmEditor.Lines.LoadFromFile(Filename, TEncoding.UTF8);
-			FChanged := False;
+			// Reset caret to beginning after loading
+			mmEditor.CaretPosition := TCaretPosition.Create(0, 0);
+			// Reset AFTER loading, so RefreshPreview knows to do full load
+			FPreviewInitialized := False;
 			RefreshPreview;
 			Caption := PROGRAM_NAME + ' - ' + ExtractFileName(Filename);
+			FChanged := False;
 		end
 		else
 			ShowMessage('File not found: ' + Filename);
@@ -575,7 +639,16 @@ end;
 
 procedure TfrmMarkdown.FormActivate(Sender: TObject);
 begin
-	RefreshPreview;
+	if FPendingInitialLoad then
+	begin
+		FPendingInitialLoad := False;
+
+		OpenDialog1.Filename := ExtractFileName(ParamStr(1));
+		self.Caption := PROGRAM_NAME + ' - ' + OpenDialog1.Filename;
+		OpenMarkdown(OpenDialog1.Filename);
+
+
+	end;
 end;
 
 procedure TfrmMarkdown.FormClose(Sender: TObject; var Action: TCloseAction);
@@ -593,6 +666,7 @@ begin
 	FPreviewInitialized := False;
 	FPendingPreviewScroll := False;
 	FPendingScrollRatio := 0;
+	FPendingInitialLoad := False;
 	mmEditor.Font.Size := 14;
 	LoadWindowState;
 end;
